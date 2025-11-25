@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>迅猛龙 Board V5.1 DualQB</title>
+    <style>
+        /* 1. 布局基础 */
+        html, body {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            overflow: hidden; /* 禁止滚动 */
+            background-color: #222; /* 深色背景防止白边 */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex; flex-direction: column;
+        }
+
+        /* 2. 顶部控制栏 */
+        .header {
+            background: #fff;
+            padding: 8px 16px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 100;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0; /* 防止被压缩 */
+        }
+
+        .ctrl-group {
+            display: flex; flex-direction: column;
+            font-size: 11px; color: #666; font-weight: 600;
+        }
+
+        /* 切换按钮样式 */
+        .toggle-box {
+            display: flex; background: #eee; border-radius: 4px; padding: 2px;
+        }
+        .toggle-btn {
+            border: none; background: transparent; padding: 4px 10px;
+            font-size: 12px; font-weight: bold; cursor: pointer;
+            border-radius: 3px; color: #888;
+        }
+        .toggle-btn.active { background: #fff; color: #1890ff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .toggle-btn.active-run { background: #fff; color: #d46b08; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+        /* 通用按钮 */
+        .btn {
+            border: none; padding: 6px 16px; border-radius: 4px;
+            font-size: 13px; font-weight: 600; cursor: pointer; color: white;
+            white-space: nowrap;
+        }
+        .btn-blue { background: #1890ff; } .btn-blue:active { background: #096dd9; }
+        .btn-gray { background: #555; } .btn-gray:active { background: #333; }
+        .btn-red { background: #ff4d4f; } .btn-red:active { background: #cf1322; }
+
+        /* 3. 画布容器 */
+        #game-container {
+            flex: 1;
+            position: relative;
+            background-color: #333;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+        }
+
+        canvas {
+            display: block;
+            outline: none;
+        }
+
+        /* 4. 底部状态栏 */
+        .footer {
+            background: #111; color: #ccc;
+            padding: 5px 15px; font-size: 12px;
+            display: flex; justify-content: space-between;
+            flex-shrink: 0;
+            border-top: 1px solid #444;
+        }
+
+        /* 5. 提示 Toast */
+        .toast {
+            position: absolute; top: 20px; left: 50%;
+            transform: translate(-50%, -20px);
+            background: rgba(0,0,0,0.8); color: white;
+            padding: 8px 16px; border-radius: 20px;
+            font-size: 14px; opacity: 0; pointer-events: none;
+            transition: 0.3s; z-index: 200;
+        }
+        .toast.show { transform: translate(-50%, 0); opacity: 1; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <!-- 进攻模式 -->
+        <div class="ctrl-group">
+            <span>进攻模式 (Mode)</span>
+            <div class="toggle-box">
+                <button class="toggle-btn active" id="btn-pass" onclick="app.setMode('pass')">传球</button>
+                <button class="toggle-btn" id="btn-run" onclick="app.setMode('run')">跑球</button>
+            </div>
+        </div>
+
+        <!-- 防守模式：样式与进攻一致 + 杀四 -->
+        <div class="ctrl-group">
+            <span>防守模式</span>
+            <div class="toggle-box">
+                <button class="toggle-btn active" id="btn-def-man" onclick="app.setDef('man')">Man (盯人)</button>
+                <button class="toggle-btn" id="btn-def-zone" onclick="app.setDef('zone')">Zone (区域)</button>
+            </div>
+            <label style="margin-top:4px; font-size:11px; font-weight:500; color:#444;">
+                <input type="checkbox" id="chk-kill4" onchange="app.setKill4(this.checked)" style="margin-right:4px;">杀四
+            </label>
+        </div>
+
+        <!-- 速度 -->
+        <div class="ctrl-group">
+            <span>速度 (Speed)</span>
+            <input type="range" min="1" max="10" value="3" oninput="app.speed=parseInt(this.value)">
+        </div>
+
+        <!-- 路线阶段 -->
+        <div class="ctrl-group">
+            <span>路线阶段</span>
+            <div class="toggle-box">
+                <button class="toggle-btn active" id="btn-route-play" onclick="app.setRoutePhase('play')">开球后</button>
+                <button class="toggle-btn" id="btn-route-pre" onclick="app.setRoutePhase('pre')">开球前</button>
+            </div>
+        </div>
+
+        <!-- 新增：双QB模式 + 二次交递模式 -->
+        <div class="ctrl-group">
+            <span>进攻特殊</span>
+            <label style="font-size:11px; font-weight:500; color:#444; margin-bottom:2px;">
+                <input type="checkbox" id="chk-double-qb" onchange="app.setQBMode(this.checked ? 'double' : 'single')" style="margin-right:4px;">双QB模式
+            </label>
+            <label style="font-size:11px; font-weight:500; color:#444;">
+                <input type="checkbox" id="chk-second-ex" onchange="app.setSecondExchange(this.checked)" style="margin-right:4px;">二次交递模式
+            </label>
+        </div>
+
+        <div style="flex:1"></div>
+
+        <button class="btn btn-gray" onclick="app.reset()">重置</button>
+        <button class="btn btn-red" onclick="app.clear()">清空</button>
+        <button class="btn btn-blue" id="btn-play" onclick="app.startImmediate()">▶ 立即开球</button>
+        <button class="btn btn-blue" id="btn-motion" onclick="app.startMotionSnap()">阵型变换开球</button>
+    </div>
+
+    <div id="game-container">
+        <canvas id="canvas"></canvas>
+        <div id="toast" class="toast">Ready</div>
+    </div>
+
+    <div class="footer">
+        <span id="status">系统就绪</span>
+        <span id="info">V4.1 Dual QB & 二次交递</span>
+    </div>
+
+    <script>
+    /**
+     * 游戏常量 (逻辑尺寸，永远不变)
+     */
+    const GAME = {
+        W: 1200,    // 逻辑宽度
+        H: 800,     // 逻辑高度
+        YARD: 40,   // 1码像素
+        R: 18       // 球员半径
+    };
+
+    const SCRIM_Y = 600;                 // 启球线
+    const RUSH_Y = SCRIM_Y - 7 * GAME.YARD; // 7码线
+
+    /**
+     * 应用程序主逻辑
+     */
+    class App {
+        constructor() {
+            this.canvas = document.getElementById('canvas');
+            this.ctx = this.canvas.getContext('2d');
+            this.container = document.getElementById('game-container');
+
+            // 视图变换参数
+            this.transform = { scale: 1, offsetX: 0, offsetY: 0 };
+
+            // 游戏状态
+            this.players = [];
+            this.mode = 'pass';          // 进攻模式：传球 / 跑球
+            this.defType = 'man';        // 防守模式：man / zone
+            this.speed = 3;              // 与滑块默认值一致
+
+            this.running = false;        // 是否在播放
+            this.paused = false;         // 是否被用户暂停
+            this.runPhase = 'idle';      // idle | pre | pause | run
+            this.routePhase = 'play';    // 路线编辑阶段: play(开球后) | pre(开球前)
+
+            this.qbMode = 'single';      // 单QB or 双QB: 'single' | 'double'
+            this.secondExchangeMode = false;  // 是否开启二次交递模式
+
+            this.kill4Enabled = false;       // 是否勾选“杀四”
+            this.sevenYardRuleActive = true; // 7码原则是否生效
+
+            this.selected = null;
+            this.timer = 0;
+            this.pauseFrames = 0;        // 阵型变换完成后的随机暂停帧数
+
+            // 交接 / 双QB / 二次交递相关状态
+            this.playSource = null;          // 'immediate' | 'motion' | null
+            this.handoffDone = false;        // 普通跑球交接是否已完成
+            this.doubleQBTransferDone = false;// 双QB交接是否已完成（这里限制为一次）
+
+            this.secondStage = 0;            // 二次交递阶段：0未开始 1已第一次QB->WR 2动画回QB中 3完成
+            this.secondReceiver = null;      // 第一次接 QB 球的进攻球员
+            this.secondExchangeCompleted = false; // 二次交递是否已完成
+
+            this.ballAnim = null;           // 球动画 {active, fromX,fromY,toX,toY,x,y,t,duration}
+
+            this.initPlayers();
+
+            // resize 自适应
+            window.addEventListener('resize', () => this.resize());
+            this.resize();
+
+            // 交互
+            this.bindInput();
+
+            // 循环
+            this.loop = this.loop.bind(this);
+            requestAnimationFrame(this.loop);
+        }
+
+        getQB() {
+            return this.players.find(p => p.team === 'off' && p.role === 'QB');
+        }
+
+        resetSecondExchangeState() {
+            this.secondStage = 0;
+            this.secondReceiver = null;
+            this.secondExchangeCompleted = false;
+            this.ballAnim = null;
+            this.sevenYardRuleActive = true; // 重新生效 7 码原则
+        }
+
+        /**
+         * 自适应屏幕大小
+         */
+        resize() {
+            const cw = this.container.clientWidth;
+            const ch = this.container.clientHeight;
+
+            this.canvas.width = cw;
+            this.canvas.height = ch;
+
+            const scaleX = cw / GAME.W;
+            const scaleY = ch / GAME.H;
+            const scale = Math.min(scaleX, scaleY) * 0.95;
+
+            const offsetX = (cw - GAME.W * scale) / 2;
+            const offsetY = (ch - GAME.H * scale) / 2;
+
+            this.transform = { scale, offsetX, offsetY };
+            this.draw();
+        }
+
+        // --- 数据初始化 ---
+        initPlayers() {
+            this.players = [
+                // Offense
+                new Player('Q', 600, 650, 'off', '#cf1322', 'QB'),
+                new Player('C', 600, 600, 'off', '#666', 'OL'),
+                new Player('X', 200, 600, 'off', '#d46b08', 'WR'),
+                // 把 Y 当成 RB（跑位）
+                new Player('Y', 800, 600, 'off', '#389e0d', 'RB'),
+                new Player('Z', 1000, 600, 'off', '#722ed1', 'WR'),
+                // Defense
+                new Player('R', 500, 520, 'def', '#1890ff', 'R'),
+                new Player('LB', 650, 480, 'def', '#1890ff', 'LB'),
+                new Player('CB1', 200, 450, 'def', '#003eb3', 'CB'),
+                new Player('CB2', 1000, 450, 'def', '#003eb3', 'CB'),
+                new Player('S', 600, 250, 'def', '#002766', 'S')
+            ];
+            this.players[0].hasBall = true; // QB 持球
+        }
+
+        // --- 交互系统 ---
+        bindInput() {
+            let isDrag = false;
+
+            const toGamePos = (clientX, clientY) => {
+                const rect = this.canvas.getBoundingClientRect();
+                const x = (clientX - rect.left - this.transform.offsetX) / this.transform.scale;
+                const y = (clientY - rect.top - this.transform.offsetY) / this.transform.scale;
+                return { x, y };
+            };
+
+            const startHandler = (e) => {
+                if (this.running && !this.paused) return;
+                const cx = e.touches ? e.touches[0].clientX : e.clientX;
+                const cy = e.touches ? e.touches[0].clientY : e.clientY;
+                const pos = toGamePos(cx, cy);
+
+                const hit = this.players.slice().reverse().find(p => {
+                    const dx = p.x - pos.x;
+                    const dy = p.y - pos.y;
+                    return (dx*dx + dy*dy) < (GAME.R + 10)**2;
+                });
+
+                if (hit) {
+                    this.selected = hit;
+                    isDrag = true;
+                    this.setStatus(`选中: ${hit.label}`);
+                } else if (this.selected && this.selected.team === 'off') {
+                    // 画路线：根据当前路线阶段，分“开球前”和“开球后”
+                    if (this.routePhase === 'pre') {
+                        this.selected.preRoutes.push({ x: pos.x, y: pos.y });
+                    } else {
+                        this.selected.routes.push({ x: pos.x, y: pos.y });
+                    }
+                } else {
+                    this.selected = null;
+                    this.setStatus("就绪");
+                }
+            };
+
+            const moveHandler = (e) => {
+                if (!isDrag || !this.selected) return;
+                e.preventDefault();
+                const cx = e.touches ? e.touches[0].clientX : e.clientX;
+                const cy = e.touches ? e.touches[0].clientY : e.clientY;
+                const pos = toGamePos(cx, cy);
+
+                this.selected.x = pos.x;
+                this.selected.y = pos.y;
+                this.selected.ix = pos.x;
+                this.selected.iy = pos.y;
+            };
+
+            const endHandler = () => { isDrag = false; };
+
+            // 双击：清除该进攻球员的所有路线
+            const dblClickHandler = (e) => {
+                if (this.running && !this.paused) return;
+                const cx = e.clientX;
+                const cy = e.clientY;
+                const pos = toGamePos(cx, cy);
+
+                const hit = this.players.slice().reverse().find(p => {
+                    const dx = p.x - pos.x;
+                    const dy = p.y - pos.y;
+                    return (dx*dx + dy*dy) < (GAME.R + 10)**2;
+                });
+
+                if (hit && hit.team === 'off') {
+                    hit.routes = [];
+                    hit.path = [];
+                    hit.pathIdx = 0;
+
+                    hit.preRoutes = [];
+                    hit.prePath = [];
+                    hit.prePathIdx = 0;
+
+                    this.setStatus(`已清除 ${hit.label} 的路线`);
+                    this.toast(`已清除 ${hit.label} 的路线`);
+                }
+            };
+
+            // 鼠标事件
+            this.canvas.addEventListener('mousedown', startHandler);
+            window.addEventListener('mousemove', moveHandler);
+            window.addEventListener('mouseup', endHandler);
+            this.canvas.addEventListener('dblclick', dblClickHandler);
+
+            // 触摸事件
+            this.canvas.addEventListener('touchstart', startHandler, {passive: false});
+            window.addEventListener('touchmove', moveHandler, {passive: false});
+            window.addEventListener('touchend', endHandler);
+
+            // 右键取消选中
+            this.canvas.addEventListener('contextmenu', e => {
+                e.preventDefault();
+                this.selected = null;
+                this.setStatus("取消选中");
+            });
+        }
+
+        // --- 控制运行阶段状态 ---
+        setRunPhase(phase) {
+            this.runPhase = phase;             // idle | pre | pause | run
+            this.running = (phase !== 'idle'); // loop 里用
+        }
+
+        // --- 游戏循环 ---
+        loop() {
+            if (this.running && !this.paused) {
+                this.update();
+            }
+            this.draw();
+            requestAnimationFrame(this.loop);
+        }
+
+        update() {
+            this.timer++;
+
+            if (this.runPhase === 'pre') {
+                this.updatePreMotionPhase();
+            } else if (this.runPhase === 'pause') {
+                this.updatePausePhase();
+            } else if (this.runPhase === 'run') {
+                this.updateRunPhase();
+            }
+
+            if (this.ballAnim && this.ballAnim.active) {
+                this.updateBallAnim();
+            }
+        }
+
+        // 阵型变换：开球前跑动阶段
+        updatePreMotionPhase() {
+            const motionOff = this.players.filter(
+                p => p.team === 'off' && p.prePath && p.prePath.length > 0
+            );
+
+            // 开球前只动有 prePath 的进攻球员
+            motionOff.forEach(p => {
+                const moveSpeed = this.speed * 0.4;
+                if (p.prePathIdx < p.prePath.length - 1) {
+                    p.prePathIdx = Math.min(p.prePathIdx + moveSpeed, p.prePath.length - 1);
+                    const pt = p.prePath[Math.floor(p.prePathIdx)];
+                    if (pt) { p.x = pt.x; p.y = pt.y; }
+                }
+            });
+
+            // 阵型变换阶段的特殊防守逻辑
+            this.updatePreMotionDefense(motionOff);
+
+            // 判断阵型变换是否全部完成
+            const anyMoving = motionOff.some(
+                p => p.prePathIdx < p.prePath.length - 1
+            );
+
+            if (!anyMoving) {
+                // 随机 3~5 秒暂停
+                const minSec = 3, maxSec = 5;
+                this.pauseFrames = Math.floor(60 * (minSec + Math.random() * (maxSec - minSec)));
+
+                this.timer = 0;
+                this.setRunPhase('pause');
+                this.setStatus("阵型变换完成，等待开球...");
+                this.toast("阵型变换完成，等待开球…");
+            }
+        }
+
+        // 阵型变换完成后的随机暂停阶段：所有人站住不动
+        updatePausePhase() {
+            if (this.timer >= this.pauseFrames) {
+                this.preparePlayPathsFromCurrent();  // 以当前站位作为正式路线起点
+                this.timer = 0;
+                this.setRunPhase('run');
+                this.setStatus("正式开球 Running");
+                this.toast("正式开球！");
+            }
+        }
+
+        // 正式 running 阶段
+        updateRunPhase() {
+            // 进攻方按正式路线移动
+            this.players.forEach(p => {
+                const moveSpeed = this.speed * 0.4;
+                if (p.path.length > 0 && p.pathIdx < p.path.length) {
+                    p.pathIdx = Math.min(p.pathIdx + moveSpeed, p.path.length - 1);
+                    const pt = p.path[Math.floor(p.pathIdx)];
+                    if (pt) { p.x = pt.x; p.y = pt.y; }
+                }
+            });
+
+            // 交接逻辑
+            if (this.secondExchangeMode) {
+                this.updateSecondExchange();
+            } else if (this.mode === 'run') {
+                this.updateRunHandoff();
+            }
+
+            // 双QB模式（不叠加二次交递，避免冲突）
+            if (this.qbMode === 'double' && !this.secondExchangeMode) {
+                this.updateDoubleQB();
+            }
+
+            // 防守 AI
+            this.updateDef();
+
+            // 传球空位逻辑
+            if (this.mode === 'pass') this.checkPass();
+            else this.players.forEach(p => p.open = false);
+        }
+
+        // 阵型变换阶段防守逻辑
+        updatePreMotionDefense(motionOff) {
+            if (!motionOff || motionOff.length === 0) return;
+
+            const defenders = this.players.filter(p => p.team === 'def');
+
+            const assigned = new Set();
+            const pairs = [];
+
+            motionOff.forEach(off => {
+                let bestDef = null;
+                let bestDist = Infinity;
+
+                defenders.forEach(d => {
+                    if (assigned.has(d)) return;
+
+                    const dx = d.x - off.x;
+                    const dy = d.y - off.y;
+                    const dist = Math.hypot(dx, dy);
+
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestDef = d;
+                    }
+                });
+
+                if (bestDef) {
+                    assigned.add(bestDef);
+                    pairs.push({ off, def: bestDef });
+                }
+            });
+
+            const lateralSpeed = this.speed * 0.4;
+
+            pairs.forEach(({ off, def }) => {
+                const dx = off.x - def.x;
+                if (Math.abs(dx) <= lateralSpeed) {
+                    def.x = off.x;
+                } else {
+                    def.x += Math.sign(dx) * lateralSpeed;
+                }
+                // def.y 不变，实现“横向平移”
+            });
+        }
+
+        updateDef() {
+            const off = this.players.filter(p => p.team === 'off');
+            const carrier = this.players.find(p => p.hasBall);
+
+            this.players.filter(p => p.team === 'def').forEach(d => {
+                let tx = d.x, ty = d.y;
+                let spd = this.speed * 0.35;
+
+                if (this.mode === 'run' && carrier) {
+                    // 跑球模式：所有人冲向持球人
+                    tx = carrier.x; ty = carrier.y;
+                    spd = this.speed * 0.45;
+                } else {
+                    // 传球模式
+                    if (this.defType === 'man') {
+                        const map = {'R':'Q', 'LB':'C', 'CB1':'X', 'CB2':'Z', 'S':'Y'};
+                        const targetLabel = map[d.label];
+                        const tObj = off.find(p => p.label === targetLabel);
+                        if (tObj) { tx = tObj.x; ty = tObj.y; }
+                    } else {
+                        // Zone
+                        const zones = {'S':[600,250], 'CB1':[200,400], 'CB2':[1000,400], 'LB':[600,450], 'R':[600,600]};
+                        if (d.label === 'R' && carrier) { 
+                            tx = carrier.x; ty = carrier.y; 
+                        } else if (zones[d.label]) {
+                            tx = zones[d.label][0] + (carrier ? (carrier.x - 600)*0.5 : 0);
+                            ty = zones[d.label][1];
+                        }
+                    }
+                }
+
+                const dist = Math.hypot(tx - d.x, ty - d.y);
+                if (dist === 0) return;
+
+                let step = spd;
+                if (dist < step) step = dist;
+
+                let nextX = d.x + (tx - d.x) / dist * step;
+                let nextY = d.y + (ty - d.y) / dist * step;
+
+                // 7码原则限制：未失效时，防守不可越过启球线（SCRIM_Y）
+                if (this.sevenYardRuleActive) {
+                    if (this.kill4Enabled) {
+                        // 勾选杀四：R 可以自由越线，其他人不能
+                        if (d.label !== 'R' && nextY > SCRIM_Y) {
+                            nextY = SCRIM_Y;
+                        }
+                    } else {
+                        // 未勾选杀四：所有防守都不能越线
+                        if (nextY > SCRIM_Y) {
+                            nextY = SCRIM_Y;
+                        }
+                    }
+                }
+
+                d.x = nextX;
+                d.y = nextY;
+            });
+        }
+
+        // 普通跑球模式：QB 与 RB 接触时交接球
+        updateRunHandoff() {
+            if (this.secondExchangeMode) return; // 二次交递模式下，不走普通跑球交接
+            if (this.handoffDone) return;
+
+            const qb = this.getQB();
+            const carrier = this.players.find(p => p.hasBall);
+            if (!carrier || carrier !== qb) return;
+
+            const HANDOFF_DIST = GAME.R * 4;
+
+            const target = this.players
+                .filter(p => p.team === 'off' && p !== carrier)
+                .find(p => {
+                    const dx = p.x - carrier.x;
+                    const dy = p.y - carrier.y;
+                    return (dx*dx + dy*dy) <= HANDOFF_DIST * HANDOFF_DIST;
+                });
+
+            if (target) {
+                carrier.hasBall = false;
+                target.hasBall = true;
+                this.handoffDone = true;
+                this.setStatus(`跑球：球已交给 ${target.label}`);
+                this.toast(`跑球：交接给 ${target.label}`);
+            }
+        }
+
+        // 双QB模式：有进攻球员在 QB 身后接近时，QB 把球交给他
+        updateDoubleQB() {
+            const qb = this.getQB();
+            if (!qb) return;
+            if (this.doubleQBTransferDone) return; // 暂时限制一次
+            if (this.ballAnim && this.ballAnim.active) return;
+
+            const carrier = this.players.find(p => p.hasBall);
+            if (!carrier || carrier !== qb) return;
+
+            const candidates = this.players.filter(p => p.team === 'off' && p !== qb);
+            let best = null;
+            let bestDist = Infinity;
+
+            candidates.forEach(p => {
+                // 文案是“QB 横坐标的后方”，这里按纵向理解为更靠后：y > qb.y
+                if (p.y <= qb.y + 5) return;
+                const d = Math.hypot(p.x - qb.x, p.y - qb.y);
+                if (d < bestDist) {
+                    bestDist = d;
+                    best = p;
+                }
+            });
+
+            const THRESH = GAME.R * 4;
+            if (best && bestDist <= THRESH) {
+                qb.hasBall = false;
+                best.hasBall = true;
+                this.doubleQBTransferDone = true;
+                this.setStatus(`双QB：球交给 ${best.label}`);
+                this.toast(`双QB：球交给 ${best.label}`);
+            }
+        }
+
+        // 二次交递模式：QB -> 最近进攻 -> 再慢速动画回 QB
+        updateSecondExchange() {
+            const qb = this.getQB();
+            if (!qb) return;
+            if (!this.secondExchangeMode) return;
+            if (this.secondExchangeCompleted) return;
+            if (this.ballAnim && this.ballAnim.active) return;
+
+            if (this.secondStage === 0) {
+                // 阶段0：QB 持球，寻找最近进攻球员做第一次交接
+                const carrier = this.players.find(p => p.hasBall);
+                if (!carrier || carrier !== qb) return;
+
+                let nearest = null;
+                let bestDist = Infinity;
+                this.players
+                    .filter(p => p.team === 'off' && p !== qb)
+                    .forEach(p => {
+                        const d = Math.hypot(p.x - qb.x, p.y - qb.y);
+                        if (d < bestDist) {
+                            bestDist = d;
+                            nearest = p;
+                        }
+                    });
+
+                const THRESH1 = GAME.R * 4;
+                if (nearest && bestDist <= THRESH1) {
+                    qb.hasBall = false;
+                    nearest.hasBall = true;
+                    this.secondReceiver = nearest;
+                    this.secondStage = 1;
+                    this.setStatus(`二次交递：第一次交给 ${nearest.label}`);
+                    this.toast(`二次交递：第一次交给 ${nearest.label}`);
+                }
+            } else if (this.secondStage === 1) {
+                // 阶段1：等待持球的进攻球员再接近 QB，触发第二次回传（慢动画）
+                const carrier = this.players.find(p => p.hasBall);
+                if (!carrier || carrier !== this.secondReceiver) return;
+
+                const d = Math.hypot(carrier.x - qb.x, carrier.y - qb.y);
+                const THRESH2 = GAME.R * 4;
+                if (d <= THRESH2) {
+                    this.ballAnim = {
+                        active: true,
+                        fromX: carrier.x,
+                        fromY: carrier.y,
+                        toX: qb.x,
+                        toY: qb.y,
+                        x: carrier.x,
+                        y: carrier.y,
+                        t: 0,
+                        duration: 40   // 帧数越大，动画越慢
+                    };
+                    carrier.hasBall = false;
+                    qb.hasBall = false;
+                    this.secondStage = 2;
+                    this.setStatus("二次交递：球回 QB 中…");
+                }
+            }
+            // 阶段2及以后只由 updateBallAnim 负责完成
+        }
+
+        // 球从接球者慢速动画回 QB
+        updateBallAnim() {
+            if (!this.ballAnim || !this.ballAnim.active) return;
+
+            const a = this.ballAnim;
+            a.t += 1 / a.duration;
+            if (a.t >= 1) {
+                a.t = 1;
+                a.active = false;
+
+                const qb = this.getQB();
+                if (qb) {
+                    qb.hasBall = true;
+                }
+                this.secondStage = 3;
+                this.secondExchangeCompleted = true;
+                this.sevenYardRuleActive = false; // 二次交递完成后，7码原则失效
+                this.setStatus("二次交递完成，防守可全面冲击");
+                this.toast("二次交递完成：防守全面放开！");
+            }
+
+            const t = a.t;
+            a.x = a.fromX + (a.toX - a.fromX) * t;
+            a.y = a.fromY + (a.toY - a.fromY) * t;
+        }
+
+        checkPass() {
+            const recs = this.players.filter(p => p.team === 'off' && p.role !== 'QB');
+            const defs = this.players.filter(p => p.team === 'def');
+            let anyOpen = false;
+
+            recs.forEach(r => {
+                let minD = 9999;
+                defs.forEach(d => {
+                    const dist = Math.hypot(r.x-d.x, r.y-d.y);
+                    if(dist < minD) minD = dist;
+                });
+                r.open = (minD > 120);
+                if(r.open) anyOpen = true;
+            });
+
+            if(this.timer > 180 && !anyOpen) this.toast("QB自行跑球！", 'warn');
+        }
+
+        // --- 绘图 ---
+        draw() {
+            this.ctx.fillStyle = '#333';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+            this.ctx.save();
+            this.ctx.translate(this.transform.offsetX, this.transform.offsetY);
+            this.ctx.scale(this.transform.scale, this.transform.scale);
+
+            this.ctx.fillStyle = '#28a745';
+            this.ctx.fillRect(0, 0, GAME.W, GAME.H);
+
+            this.drawGrid();
+            this.drawRoutes();
+
+            if (this.mode === 'pass' && this.runPhase === 'run') this.drawLines();
+
+            this.drawPlayers();
+
+            this.ctx.restore();
+        }
+
+        drawGrid() {
+            this.ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            this.ctx.font = '20px Arial';
+            this.ctx.textAlign = 'center';
+
+            const scrim = SCRIM_Y;
+
+            for(let i=0; i<20; i++) {
+                const y = scrim - i*GAME.YARD;
+                if(y<0) break;
+                this.ctx.beginPath(); this.ctx.moveTo(0, y); this.ctx.lineTo(GAME.W, y); this.ctx.stroke();
+                if(i>0 && i%5===0) this.ctx.fillText(i, 40, y+8);
+            }
+
+            this.ctx.beginPath(); this.ctx.strokeStyle='#1890ff'; this.ctx.lineWidth=4;
+            this.ctx.moveTo(0, scrim); this.ctx.lineTo(GAME.W, scrim); this.ctx.stroke();
+            
+            this.ctx.beginPath(); this.ctx.strokeStyle='#ff4d4f'; this.ctx.lineWidth=2;
+            this.ctx.setLineDash([10,10]);
+            const rushY = RUSH_Y;
+            this.ctx.moveTo(0, rushY); this.ctx.lineTo(GAME.W, rushY); this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+
+        // 同时画“开球前路线”和“开球后路线”
+        drawRoutes() {
+            this.players.forEach(p => {
+                if (p.team !== 'off') return;
+
+                // 开球前路线（阵型变换）
+                if (p.preRoutes.length > 0) {
+                    this.ctx.strokeStyle = '#ffffff';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.setLineDash([4,4]);
+                    this.ctx.beginPath();
+                    const startPre = { x: p.ix, y: p.iy };
+                    this.ctx.moveTo(startPre.x, startPre.y);
+                    p.preRoutes.forEach(n => this.ctx.lineTo(n.x, n.y));
+                    this.ctx.stroke();
+                    this.ctx.setLineDash([]);
+
+                    this.ctx.fillStyle = '#ffffff';
+                    p.preRoutes.forEach(n => {
+                        this.ctx.beginPath(); this.ctx.arc(n.x, n.y, 4, 0, Math.PI*2); this.ctx.fill();
+                    });
+                }
+
+                // 开球后正式路线
+                if (p.routes.length > 0) {
+                    this.ctx.strokeStyle = p.color;
+                    this.ctx.lineWidth = 3;
+                    this.ctx.setLineDash([8,8]);
+                    this.ctx.beginPath();
+                    const startPlay = (this.runPhase === 'run' || this.runPhase === 'pre' || this.runPhase === 'pause')
+                        ? {x:p.ix, y:p.iy}
+                        : {x:p.x, y:p.y};
+                    this.ctx.moveTo(startPlay.x, startPlay.y);
+                    p.routes.forEach(n => this.ctx.lineTo(n.x, n.y));
+                    this.ctx.stroke();
+                    this.ctx.setLineDash([]);
+
+                    this.ctx.fillStyle = p.color;
+                    p.routes.forEach(n => {
+                        this.ctx.beginPath(); this.ctx.arc(n.x, n.y, 5, 0, Math.PI*2); this.ctx.fill();
+                    });
+                }
+            });
+        }
+
+        drawLines() {
+            const qb = this.getQB();
+            if (!qb) return;
+            this.players.forEach(p => {
+                if(p.open) {
+                    this.ctx.strokeStyle = '#52c41a'; this.ctx.lineWidth = 4;
+                    this.ctx.beginPath(); this.ctx.moveTo(qb.x, qb.y); this.ctx.lineTo(p.x, p.y); this.ctx.stroke();
+                    this.ctx.fillStyle = 'rgba(82,196,26,0.3)';
+                    this.ctx.beginPath(); this.ctx.arc(p.x, p.y, GAME.R+15, 0, Math.PI*2); this.ctx.fill();
+                }
+            });
+        }
+
+        drawPlayers() {
+            this.players.forEach(p => {
+                if(p === this.selected) {
+                    this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                    this.ctx.beginPath(); this.ctx.arc(p.x, p.y, GAME.R+6, 0, Math.PI*2); this.ctx.fill();
+                }
+                this.ctx.fillStyle = p.color;
+                this.ctx.beginPath(); this.ctx.arc(p.x, p.y, GAME.R, 0, Math.PI*2); this.ctx.fill();
+                this.ctx.strokeStyle = '#fff'; this.ctx.lineWidth = 2; this.ctx.stroke();
+
+                this.ctx.fillStyle = '#fff'; this.ctx.font = 'bold 12px Arial';
+                this.ctx.textAlign='center'; this.ctx.textBaseline='middle';
+                this.ctx.fillText(p.label, p.x, p.y);
+            });
+
+            // 普通持球绘制
+            this.players.forEach(p => {
+                if(p.hasBall && (!this.ballAnim || !this.ballAnim.active)) {
+                    this.ctx.fillStyle='#873800';
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(p.x+10, p.y-10, 8, 5, Math.PI/4, 0, Math.PI*2);
+                    this.ctx.fill();
+                    this.ctx.strokeStyle = '#fff';
+                    this.ctx.stroke();
+                }
+            });
+
+            // 二次交递动画中的球
+            if (this.ballAnim && this.ballAnim.active) {
+                const a = this.ballAnim;
+                this.ctx.fillStyle='#873800';
+                this.ctx.beginPath();
+                this.ctx.ellipse(a.x+10, a.y-10, 8, 5, Math.PI/4, 0, Math.PI*2);
+                this.ctx.fill();
+                this.ctx.strokeStyle = '#fff';
+                this.ctx.stroke();
+            }
+        }
+
+        // --- 控制逻辑 ---
+        setMode(m) {
+            this.mode = m;
+            document.getElementById('btn-pass').className = m==='pass'?'toggle-btn active':'toggle-btn';
+            document.getElementById('btn-run').className = m==='run'?'toggle-btn active-run':'toggle-btn';
+            this.toast(m==='pass' ? "模式: 传球" : "模式: 跑球");
+        }
+
+        setDef(v) {
+            this.defType = v;
+            const btnMan = document.getElementById('btn-def-man');
+            const btnZone = document.getElementById('btn-def-zone');
+            if (btnMan && btnZone) {
+                if (v === 'man') {
+                    btnMan.className = 'toggle-btn active';
+                    btnZone.className = 'toggle-btn';
+                } else {
+                    btnMan.className = 'toggle-btn';
+                    btnZone.className = 'toggle-btn active';
+                }
+            }
+        }
+
+        setRoutePhase(phase) {
+            this.routePhase = phase;
+            const btnPlay = document.getElementById('btn-route-play');
+            const btnPre = document.getElementById('btn-route-pre');
+            if (!btnPlay || !btnPre) return;
+            if (phase === 'play') {
+                btnPlay.className = 'toggle-btn active';
+                btnPre.className = 'toggle-btn';
+                this.toast("编辑：开球后路线");
+            } else {
+                btnPlay.className = 'toggle-btn';
+                btnPre.className = 'toggle-btn active';
+                this.toast("编辑：开球前阵型变换路线");
+            }
+        }
+
+        setQBMode(mode) {
+            this.qbMode = mode; // 'single' | 'double'
+        }
+
+        setSecondExchange(enabled) {
+            this.secondExchangeMode = enabled;
+            this.resetSecondExchangeState();
+        }
+
+        setKill4(enabled) {
+            this.kill4Enabled = enabled;
+            // 在 idle 时生效更自然：重摆 R
+            if (this.runPhase === 'idle') {
+                const r = this.players.find(p => p.label === 'R');
+                if (r) {
+                    if (enabled) {
+                        r.ix = r.x = 600;
+                        r.iy = r.y = RUSH_Y;
+                    } else {
+                        // 恢复到初始站位
+                        r.ix = r.x = r.baseX;
+                        r.iy = r.y = r.baseY;
+                    }
+                }
+            }
+        }
+
+        setStatus(t) { document.getElementById('status').innerText = t; }
+
+        toast(msg, type) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.style.backgroundColor = type==='warn'?'#cf1322':'rgba(0,0,0,0.8)';
+            t.classList.add('show');
+            setTimeout(()=>t.classList.remove('show'), 2000);
+        }
+
+        // 立即开球：支持 开始 / 暂停 / 继续
+        startImmediate() {
+            const playBtn = document.getElementById('btn-play');
+            const motionBtn = document.getElementById('btn-motion');
+
+            // 1）当前是由“立即开球”模式启动，且正在运行 => 暂停
+            if (this.playSource === 'immediate' && this.running && !this.paused) {
+                this.paused = true;
+                this.running = false;
+                playBtn.innerText = '▶ 继续';
+                this.setStatus('已暂停');
+                return;
+            }
+
+            // 2）当前是由“立即开球”模式启动，且处于暂停 => 继续
+            if (this.playSource === 'immediate' && this.paused && !this.running && this.runPhase !== 'idle') {
+                this.paused = false;
+                this.running = true;
+                playBtn.innerText = '⏸ 暂停';
+                this.setStatus('继续执行');
+                return;
+            }
+
+            // 3）当前是空闲状态（尚未开始）=> 从头立即开球
+            if (this.runPhase === 'idle') {
+                this.playSource = 'immediate';
+                this.paused = false;
+                this.resetPositions();               // 回到初始站位，但保留路线
+                this.preparePlayPathsFromCurrent();  // 以当前站位+routes 构造 path
+                this.resetSecondExchangeState();
+                this.handoffDone = false;
+                this.doubleQBTransferDone = false;
+
+                this.timer = 0;
+                this.setRunPhase('run');             // 内部会把 running 设为 true
+
+                playBtn.innerText = '⏸ 暂停';
+                if (motionBtn) motionBtn.innerText = '阵型变换开球';
+                this.setStatus('立即开球 Running');
+                return;
+            }
+
+            // 4）其他情况（例如原来是阵型变换模式），简单处理：先重置再重新立即开球
+            this.reset();
+            this.playSource = 'immediate';
+            this.startImmediate();
+        }
+
+        // 阵型变换开球：支持 开始 / 暂停 / 继续
+        startMotionSnap() {
+            const motionBtn = document.getElementById('btn-motion');
+            const playBtn = document.getElementById('btn-play');
+
+            // 1）当前是由“阵型变换开球”模式启动，且正在运行 => 暂停
+            if (this.playSource === 'motion' && this.running && !this.paused) {
+                this.paused = true;
+                this.running = false;
+                motionBtn.innerText = '▶ 继续';
+                this.setStatus('已暂停');
+                return;
+            }
+
+            // 2）当前是由“阵型变换开球”模式启动，且处于暂停 => 继续
+            if (this.playSource === 'motion' && this.paused && !this.running && this.runPhase !== 'idle') {
+                this.paused = false;
+                this.running = true;
+                motionBtn.innerText = '⏸ 暂停';
+                this.setStatus('继续执行');
+                return;
+            }
+
+            // 3）空闲状态 => 从头执行 阵型变换 + 自动开球
+            if (this.runPhase === 'idle') {
+                this.playSource = 'motion';
+                this.paused = false;
+                this.resetPositions();
+                this.preparePreMotionPaths();  // 只给有 preRoutes 的人生成 prePath
+                this.resetSecondExchangeState();
+                this.handoffDone = false;
+                this.doubleQBTransferDone = false;
+
+                this.timer = 0;
+                this.setRunPhase('pre');       // pre 阶段结束会进入 pause，再到 run
+
+                motionBtn.innerText = '⏸ 暂停';
+                if (playBtn) playBtn.innerText = '▶ 立即开球';
+                this.setStatus('阵型变换：开球前跑动中');
+                return;
+            }
+
+            // 4）其他情况（例如原来是立即开球模式），简单处理：重置后重新开始阵型变换模式
+            this.reset();
+            this.playSource = 'motion';
+            this.startMotionSnap();
+        }
+
+        // 只重置站位/球权，不清除路线
+        resetPositions() {
+            this.players.forEach(p => {
+                p.x = p.ix;
+                p.y = p.iy;
+                p.path = [];
+                p.pathIdx = 0;
+                p.prePath = [];
+                p.prePathIdx = 0;
+                p.hasBall = (p.role === 'QB');
+                p.open = false;
+            });
+            this.handoffDone = false;
+            this.doubleQBTransferDone = false;
+        }
+
+        // 完整重置：停止一切，恢复初始站位并重置按钮
+        reset() {
+            this.setRunPhase('idle');
+            this.timer = 0;
+            this.resetPositions();
+            this.resetSecondExchangeState();
+
+            this.paused = false;
+            this.playSource = null;
+
+            const playBtn = document.getElementById('btn-play');
+            if (playBtn) playBtn.innerText = '▶ 立即开球';
+            const motionBtn = document.getElementById('btn-motion');
+            if (motionBtn) motionBtn.innerText = '阵型变换开球';
+
+            this.setStatus("系统就绪");
+            this.draw();
+        }
+
+        clear() {
+            this.reset();
+            this.players.forEach(p => {
+                p.routes = [];
+                p.preRoutes = [];
+            });
+            this.draw();
+        }
+
+        // 根据当前坐标 + routes 构造正式 running 的路径
+        preparePlayPathsFromCurrent() {
+            this.players.forEach(p => {
+                if (p.team === 'off') {
+                    p.path = this.smoothPath({ x:p.x, y:p.y }, p.routes);
+                    p.pathIdx = 0;
+                }
+            });
+        }
+
+        // 根据当前坐标 + preRoutes 构造开球前跑动路径
+        preparePreMotionPaths() {
+            this.players.forEach(p => {
+                if (p.team === 'off') {
+                    p.prePath = this.smoothPath({ x:p.x, y:p.y }, p.preRoutes);
+                    p.prePathIdx = 0;
+                }
+            });
+        }
+
+        smoothPath(start, nodes) {
+            if(nodes.length === 0) return [];
+            let path = [start];
+            let curr = start;
+            nodes.forEach(next => {
+                let d = Math.hypot(next.x-curr.x, next.y-curr.y);
+                let steps = Math.floor(d/2);
+                for(let i=1; i<=steps; i++) {
+                    let t = i/steps;
+                    path.push({
+                        x: curr.x + (next.x-curr.x)*t,
+                        y: curr.y + (next.y-curr.y)*t
+                    });
+                }
+                curr = next;
+            });
+            return path;
+        }
+    }
+
+    // Player Data Class
+    class Player {
+        constructor(label, x, y, team, color, role) {
+            this.label = label;
+            this.x = x; this.y = y;
+            this.baseX = x; this.baseY = y; // 初始阵型位置
+            this.ix = x; this.iy = y;
+            this.team = team;
+            this.color = color;
+            this.role = role;
+
+            // 正式开球后的路线
+            this.routes = [];
+            this.path = [];
+            this.pathIdx = 0;
+
+            // 开球前阵型变换路线
+            this.preRoutes = [];
+            this.prePath = [];
+            this.prePathIdx = 0;
+
+            this.hasBall = false;
+            this.open = false;
+        }
+    }
+
+    // Start
+    window.onload = () => { window.app = new App(); };
+    </script>
+</body>
+</html>
